@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title></title>
+    </head>
+    <body>
+        <canvas id="stage" width="1000" height="1000"></canvas>
+        <script src="../dist/arrowjs.js"></script>
+        <script src="jquery.js"></script>
+        <script src="util.js"></script>
+        <script>
+	
+	class Shape {
+		constructor(symbol, x=0, y=0) {
+			this.symbol = symbol;
+			this.x = x;
+			this.y = y;
+			this.dx = 100;
+			this.dy = 100;
+		}
+		update(x, y) {
+			this.x = x;
+			this.y = y;
+		}
+		offset(dx, dy) {
+			this.dx = dx;
+			this.dy = dy;
+		}
+		render(ctx) {
+                 	ctx.fillText(this.symbol, this.x+this.dx, this.y+this.dy);
+		}
+	}
+
+
+	class Hand {
+		constructor(symbol, valuePerRotation, length, padding=15) {
+			this.shapes = [];
+			this.valuePerRotation = valuePerRotation;
+			this.size = length / padding;
+			this.padding = padding;
+			for(let i=0; i<this.size; i++) {
+				this.shapes.push(new Shape(symbol)); 
+			}
+			this.margin = 5;
+		}
+
+		update(currentValue) {
+			const offset = currentValue / this.valuePerRotation;
+			this.shapes.forEach((shape, i) => {
+                 		const spacing = this.padding * i;
+                       		const angle = (offset * (-Math.PI * 2)) + Math.PI;
+                       		shape.update(Math.sin(angle) * spacing + this.margin, Math.cos(angle) * spacing - this.margin);
+             		});
+		}
+
+		offset(buffer) {
+			this.shapes.forEach((shape, i) => shape.offset(buffer.get(i).x, buffer.get(i).y));
+		}
+
+		render(ctx) {
+			this.shapes.forEach(shape => shape.render(ctx));
+		}
+	}
+
+	class Ring {
+		constructor(letters, radius, rotate = false) {
+			this.shapes = letters.map(letter => new Shape(letter));
+			this.radius = radius;
+			this.rotate = rotate;
+			if(!rotate) this.setShape();
+		}
+
+		update(time) {
+                       	const rotateOffset = time % 60000 / 30000;
+			this.setShape(this.rotate? rotateOffset: 0);
+		}
+
+		setShape(rotateOffset = 0) {
+			this.shapes.forEach((shape, i) => {
+				const offset = i / this.shapes.length,
+                        		angle = (offset - rotateOffset) * (-Math.PI*2) + Math.PI; 
+
+                              	shape.update(Math.sin(angle) * this.radius, Math.cos(angle) * this.radius);
+             		});
+		}
+
+		offset(buffer) {
+			this.shapes.forEach((shape, i) => shape.offset(buffer.get(i+1).x, buffer.get(i+1).y));
+		}
+		render(ctx) {
+			this.shapes.forEach(shape => shape.render(ctx));
+		}
+	}
+
+	const secondHand = new Hand('.', 60, 70), minuteHand = new Hand('.', 60, 50), hourHand = new Hand('.', 12, 40);
+	const clockFace = new Ring(HOURS, 70); 
+	let clockDate = new Ring(formatDate(new Date).split(''), 100, true);
+
+	class Buffer {
+		constructor(size) {
+			this.buffer = [];
+			for(let i=0; i<size; i++) {
+				this.buffer.push(new Vec2(100, 100));
+			}
+			this.lastEvent = new Vec2(100, 100);
+         		this.speed = 0.1;
+		}
+
+		updateCenter(e) {
+			if (e) {
+	         		let delta = new Vec2(
+                     			e.x - this.lastEvent.x,
+                     			e.y - this.lastEvent.y,
+                 		);
+                 		this.buffer[0].add(delta);
+                 		this.lastEvent = new Vec2(e.x, e.y);
+	     		}
+		}
+		updateBuffer() {
+	        	let ret = false;
+             		for (let x=1; x<this.buffer.length; ++x) {
+		 		const diff = this.buffer[x-1].clone().sub(this.buffer[x]);
+		 		// use the absolute difference of buffer elements as the threshold alpha
+		 		if(!ret) {
+		     			const alpha =  Math.sqrt(diff.x * diff.x + diff.y * diff.y);
+		     			ret = alpha > 1;
+		 		}
+                 		this.buffer[x].add(diff.mul(this.speed));
+             		}
+	     		return ret;
+		}
+		get(i) { return this.buffer[i]; }
+	}
+
+         const canvas = document.getElementById('stage'), ctx = canvas.getContext('2d'); buffer = new Buffer(30);
+         
+         const updateCenter = (function (e) {
+	     	/*@arrow :: Event ~> _ */
+	     	buffer.updateCenter(e);
+         }).lift();
+
+         const updateBuffer = (function () {
+		 /*@arrow :: _ ~> Bool*/
+	     	return buffer.updateBuffer();
+         }).lift();
+
+	const refreshClock = (() => {
+	     	/*@arrow :: _ ~> _ */
+             	const now = new Date();
+		const time = now.getTime(), second = now.getSeconds(), minute = now.getMinutes(), hour = now.getHours();
+	     	secondHand.update(second);
+	     	minuteHand.update(minute);
+	     	hourHand.update(hour + minute/60);
+		if(hour==0 && minute==0 && second==0) {
+			clockDate = new Ring(formatDate(now).split(''), 100, true);
+			clockDate.offset(buffer);
+		}
+	     	clockDate.update(time);
+        }).lift();
+
+	const offsetClock = (() => {
+	     	/*@arrow :: _ ~> _ */
+		secondHand.offset(buffer);
+		minuteHand.offset(buffer);
+		hourHand.offset(buffer);
+		clockFace.offset(buffer);
+		clockDate.offset(buffer);
+	     	clockDate.update(new Date().getTime());
+	}).lift();
+
+	const renderClock = (() => {
+	     	/*@arrow :: _ ~> _ */
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.font = '14pt Arial';
+		secondHand.render(ctx);	
+		minuteHand.render(ctx);
+		hourHand.render(ctx);
+		clockFace.render(ctx);
+		clockDate.render(ctx);
+	}).lift();
+
+	const mouseMove = Arrow.on('canvas', 'mousemove');
+	const mouseDown = Arrow.on('canvas', 'mousedown');
+	const mouseUp = Arrow.on('canvas', 'mouseup');
+
+	const isOnClock = (e => {
+		 /* @arrow :: _ ~> Bool */
+                const x = e.x - buffer.lastEvent.x,
+                      y = e.y - buffer.lastEvent.y;
+		let alpha = Math.sqrt(x*x + y*y)
+		console.log(alpha);
+		return alpha < 100; 
+	}).lift();
+
+	const fastRender = reqAFrame.seq(offsetClock).seq(renderClock).seq(updateBuffer);
+	const slowRender = renderClock.wait(1000);
+	const render = fastRender.whileTrue().seq(slowRender.forever())
+	
+	/*
+	const renderLoop = 
+		render
+		.until(
+			mouseDown
+			.repeatUntil(isOnClock)
+			.noemit()
+			.seq(
+				mouseMove.switchMap(updateCenter.seq(fastRender.forever()))
+				.until(mouseUp)
+			)
+		)
+		.forever();
+	*/
+
+	const fastUpdateStream = StreamArrow.repeat(reqAFrame).map(offsetClock.seq(updateBuffer))
+
+	const renderLoop = 
+		slowRender.forever().until(mouseDown.repeatUntil(isOnClock).noemit())
+		.fanout(
+			StreamArrow.repeat(mouseDown)
+			.filter(isOnClock)
+			.switchMap(
+				StreamArrow.repeat(mouseMove)
+				.map(updateCenter)
+				.switchMap(fastUpdateStream)
+				.takeUntil(mouseUp)
+				.concat( fastUpdateStream.takeWhile(Arrow.id())	)
+				.concat( StreamArrow.interval(1000) )
+			)
+			.map(renderClock)
+			.arrow()
+		);
+
+	const refreshLoop = refreshClock.wait(1000).forever();
+
+	Arrow.fanout([refreshLoop, renderLoop]).run();
+
+        </script>
+    </body>
+</html>

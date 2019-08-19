@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title></title>
+    </head>
+    <body>
+        <div style="display: flex;">
+            <canvas  tabindex='1' id="stage" width="800" height="600" style="border: solid gray 1px; border-width: 1px 0 1px 1px;"></canvas>
+            <textarea id="logger" cols="50" rows="30"></textarea>
+        </div>
+
+        <div style="padding-top: 20px;">
+            <label>Fallen Ballons:</label>
+            <input id="count" value="0"></input>
+            <label>Speed:</label>
+            <input id="speed" value="100"></input>
+            <label>Radius:</label>
+            <input id="r" value="20"></input>
+            <label>Color:</label>
+            <input id="color" value="lightblue"></input>
+        </div>
+        <script src="../dist/arrowjs.js"></script>
+        <script src="jquery.js"></script>
+        <script src="util.js"></script>
+        <script>
+
+         let balls = [];
+         const canvas = document.getElementById('stage'),
+               ctx = canvas.getContext('2d'),
+               emitter = {
+                   events: [],
+                   registerEvent: function (eventChecker) {
+                       this.events.push(eventChecker);
+                   },
+                   checkEvents: function () {
+                       for (const event of this.events) {
+                           event();
+                       }
+                   }
+               };
+
+         emitter.registerEvent(() => {
+             const n = balls.length;
+             for (let i=0; i<n; i++) {
+		 const ball = balls[i];
+		 if(!ball.dead) {
+		   const dv = ball.speed.fsub(bird.speed), dp = ball.pos.fsub(bird.pos);
+                   if (dv.dot(dp) <= 0 && intersects(ball, bird)) {
+		  	ball.dead = true;
+		 	window.count.value = ++count;
+                   }
+		 }
+             }
+         });
+         emitter.registerEvent(() => {
+	     const b = bird;
+	     if((b.speed.x > 0 && b.pos.x >= canvas.width - b.r) || (b.speed.x < 0 && b.pos.x <= b.r)) {
+			     b.speed.x = - b.speed.x * decay;
+	     }
+	     if((b.speed.y > 0 && b.pos.y >= canvas.height - b.r) || (b.speed.y < 0 && b.pos.y <= b.r)) {
+			     b.speed.y = - b.speed.y * decay;
+	     }
+         });
+         
+         function intersects(b1, b2) {
+             const diff = b1.pos.clone().sub(b2.pos),
+                   alpha = Math.sqrt(diff.x*diff.x + diff.y*diff.y);
+
+		 return alpha <= b1.r + b2.r + 2; 
+         }
+
+         function makeBall(name, x, y, r, speed, color) {
+             const ball = {
+                 name,
+                 pos: new Vec2(x, y),
+                 speed: speed,
+                 r,
+                 color,
+             };
+	     return ball;
+         }
+
+	 const delta = 16;
+	 const timestep = delta/1000;
+	 const g = 10;
+	 const decay = 0.8;
+	 let count = 0;
+
+         const update = (function() {
+             for (const ball of balls) {
+                 ball.pos.x += ball.speed.x * timestep;
+             }
+	     bird.pos.x += bird.speed.x * timestep; 
+	     bird.pos.y += bird.speed.y * timestep; 
+	     bird.speed.y += g * timestep;
+         }).lift();
+
+	 const checkEmitter = (() => emitter.checkEvents()).lift();
+
+         const render = (function () {
+             ctx.clearRect(0, 0, canvas.width, canvas.height);
+             for (const ball of balls) {
+		renderBall(ctx, ball);
+             }
+	     renderBall(ctx, bird);
+         }).lift();
+
+	function renderBall(ctx, ball) {
+                 ctx.beginPath();
+                 ctx.arc(ball.pos.x, ball.pos.y, ball.r + 2, 0, Math.PI*2);
+                 ctx.fillStyle = 'black';
+                 ctx.fill();
+                 ctx.closePath();
+
+                 ctx.fillText(ball.name, ball.pos.x - (ball.name.length * 2), ball.pos.y + ball.r*1.8);
+                 
+                 ctx.beginPath();
+                 ctx.arc(ball.pos.x, ball.pos.y, ball.r, 0, Math.PI*2);
+                 ctx.fillStyle = ball.color;                 
+                 ctx.fill();
+                 ctx.closePath();
+	}
+
+	const cleanup = (() => {
+		/* @arrow :: _ ~> Bool */
+		const length = balls.length;
+		const newBalls = [];
+		for (let i=0; i<length; i++) {
+			const ball = balls[i];
+			if (!ball.dead && ball.pos.x > ball.r && ball.pos.x < canvas.width - ball.r) {
+				newBalls.push(ball);	
+			}
+		}
+		balls = newBalls;
+		return count < 5; 
+	}).lift();
+
+	const addBall = (() => {
+		const r = +window.r.value;
+		balls.push(makeBall('T', canvas.width - r*2, canvas.height*Math.random(), r, new Vec2(-window.speed.value, 0), window.color.value));
+             	window.color.value = nextColor();
+	}).lift();
+
+	const newGame = (()=> {
+		balls = [];
+		window.count.value = count = 0;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+		ctx.font = "30px Arial";
+               	ctx.fillStyle = 'red';
+	       	ctx.fillText('Click mouse for new game', canvas.width/2-200, canvas.height/2);
+		ctx.font = "20px Arial";
+               	ctx.fillStyle = 'blue';
+		ctx.fillText('Move bird with Left/Right/Up/Down key', canvas.width/2-200, canvas.height/2 + 40);
+		ctx.fillText('You lose if 5 balloons were hit', canvas.width/2-200, canvas.height/2 + 120);
+		ctx.font = "10px sans-serif";
+	})
+	.lift()
+	.seq(Arrow.on('canvas', 'mousedown'));
+
+	const moveBird = Arrow.on('canvas', 'keydown').seq((e => {
+		if(e.keyCode == 37) { // left key
+			bird.speed.x -= 400 * timestep; 
+		}
+		else if(e.keyCode == 39) { // right key
+			bird.speed.x += 400 * timestep; 
+		}
+		else if(e.keyCode == 38) { // up key 
+			bird.speed.y -= 400 * timestep;
+		}
+		else if(e.keyCode == 40) { // down key 
+			bird.speed.y += 400 * timestep;
+		}
+	  }).lift());
+
+	const arrow = Arrow.fix(a => 
+			newGame.seq(
+			   Arrow.fanout([
+				checkEmitter.wait(delta*2).forever(),
+				reqAFrame.seq(update).seq(render).forever(),
+				moveBird.wait(delta*2).forever(),
+				addBall.seq((k=>{ setTimeout(k, Math.random()*2000); }).klift()).forever()
+			   ])
+			   .until(cleanup.wait(delta*10).whileTrue().noemit())
+			)
+			.seq(a)
+	);
+
+	 const bird = makeBall('bird', canvas.width/2, canvas.height/2, 15, new Vec2(0, 0), 'black'); 
+
+         arrow.run();
+        </script>
+    </body>
+</html
+>

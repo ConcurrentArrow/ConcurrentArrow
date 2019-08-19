@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title></title>
+    </head>
+    <body>
+        <div style="display: flex;">
+            <canvas  tabindex='1' id="stage" width="800" height="600" style="border: solid gray 1px; border-width: 1px 0 1px 1px;"></canvas>
+            <textarea id="logger" cols="50" rows="30"></textarea>
+        </div>
+
+        <div style="padding-top: 20px;">
+            <label>Fallen Ballons:</label>
+            <input id="count" value="0"></input>
+            <label>Radius:</label>
+            <input id="r" value="20"></input>
+            <label>Color:</label>
+            <input id="color" value="lightblue"></input>
+        </div>
+        <script src="../dist/arrowjs.js"></script>
+        <script src="jquery.js"></script>
+        <script src="util.js"></script>
+        <script>
+
+         let balls = [];
+         const canvas = document.getElementById('stage'),
+               ctx = canvas.getContext('2d'),
+               emitter = {
+                   events: [],
+                   handlers: {},
+                   registerEvent: function (eventChecker) {
+                       this.events.push(eventChecker);
+                   },
+                   checkEvents: function () {
+                       for (const event of this.events) {
+                           event();
+                       }
+                   }
+               };
+
+        emitter.registerEvent(() => {
+             const n = balls.length;
+             for (let i=0; i<n; i++) {
+		 const b1 = balls[i];
+                 for (let j=i+1; j<n; j++) {
+		     const b2 = balls[j];
+		     const v1 = b1.speed, v2 = b2.speed, x1 = b1.pos, x2 = b2.pos;
+		     const dv = v1.fsub(v2), dx = x1.fsub(x2);
+
+                     if (dv.dot(dx) <= 0 && intersects(b1, b2)) {
+		 	const distance = 1/(dx.x*dx.x + dx.y*dx.y); 
+
+		 	b1.speed = v1.fsub(dx.fmul(dv.dot(dx)).fmul(distance));
+		 	b2.speed = v2.fadd(dx.fmul(dv.dot(dx)).fmul(distance));
+                     }
+                 }
+             }
+         });
+         emitter.registerEvent(() => {
+	     for (const b of balls) {
+		 if((b.speed.x > 0 && b.pos.x >= canvas.width - b.r) || (b.speed.x < 0 && b.pos.x <= b.r)) {
+		     b.speed.x = - b.speed.x * decay;
+		 }
+	     }
+	     const b = gun;
+	     if((b.speed.x > 0 && b.pos.x >= canvas.width - b.r) || (b.speed.x < 0 && b.pos.x <= b.r)) {
+		     b.speed.x = - b.speed.x * decay;
+	     }
+         });
+         
+         function intersects(b1, b2) {
+             const diff = b1.pos.clone().sub(b2.pos),
+                   alpha = Math.sqrt(diff.x*diff.x + diff.y*diff.y);
+
+		 return alpha <= b1.r + b2.r + 2; 
+         }
+
+         function makeBall(name, x, y, r, speed, color) {
+             const ball = {
+                 name,
+		 prev_pos: new Vec2(x, y),
+                 pos: new Vec2(x, y),
+                 speed: speed,
+                 r,
+                 color,
+             };
+	     return ball;
+         }
+
+	 const delta = 16;
+	 const timestep = delta/1000;
+	 const g = 10;
+	 const decay = 0.8;
+	 let count = 0;
+
+         const update = (function() {
+             for (const ball of balls) {
+		 ball.prev_pos.x = ball.pos.x; 
+		 ball.prev_pos.y = ball.pos.y;
+                 ball.pos.x += ball.speed.x * timestep;
+                 ball.pos.y += ball.speed.y * timestep;
+		 const force = (Math.abs(ball.pos.y - canvas.height) <= ball.r + 1) ? 0 : g;
+		 ball.speed.y += force * timestep;
+             }
+	     gun.pos.x += gun.speed.x * timestep; 
+         }).lift();
+
+
+	 const checkEmitter = (() => emitter.checkEvents()).lift();
+
+         const render = (function () {
+             ctx.clearRect(0, 0, canvas.width, canvas.height);
+             for (const ball of balls) {
+		renderBall(ctx, ball);
+             }
+	     renderBall(ctx, gun);
+         }).lift();
+
+
+	function renderBall(ctx, ball) {
+                 ctx.beginPath();
+                 ctx.arc(ball.pos.x, ball.pos.y, ball.r + 2, 0, Math.PI*2);
+                 ctx.fillStyle = 'black';
+                 ctx.fill();
+                 ctx.closePath();
+
+                 ctx.fillText(ball.name, ball.pos.x - (ball.name.length * 2), ball.pos.y + ball.r*1.8);
+                 
+                 ctx.beginPath();
+                 ctx.arc(ball.pos.x, ball.pos.y, ball.r, 0, Math.PI*2);
+                 ctx.fillStyle = ball.color;                 
+                 ctx.fill();
+                 ctx.closePath();
+	}
+
+	const cleanup = (() => {
+		/* @arrow :: _ ~> Bool */
+		const length = balls.length;
+		const newBalls = [];
+		for (let i=0; i<length; i++) {
+			const ball = balls[i];
+			if (ball.pos.y > ball.r && ball.pos.y < canvas.height - ball.r) {
+				newBalls.push(ball);	
+			}
+			else if(ball.pos.y > canvas.height - ball.r && ball.name == 'T') {
+				count ++;
+				window.count.value = count;
+				console.log(count);
+			}
+		}
+		balls = newBalls;
+
+		return count < 5;
+	}).lift();
+
+	const addBall = (() => {
+			const r = +window.r.value;
+			balls.push(makeBall('T', canvas.width*Math.random(), r*2, r, new Vec2(0, 0), window.color.value));
+             		window.color.value = nextColor();
+		}).lift();
+
+	const newGame = (()=> {
+		balls = [];
+		window.count.value = count = 0;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+		ctx.font = "30px Arial";
+               	ctx.fillStyle = 'red';
+	       	ctx.fillText('Click mouse for new game', canvas.width/2-200, canvas.height/2);
+		ctx.font = "20px Arial";
+               	ctx.fillStyle = 'blue';
+		ctx.fillText('Move gun with Left or Right key', canvas.width/2-200, canvas.height/2 + 40);
+	       	ctx.fillText('Fire gun with Up key', canvas.width/2-200, canvas.height/2 + 80);
+		ctx.fillText('You lose if 5 balloons fall to the ground', canvas.width/2-200, canvas.height/2 + 120);
+		ctx.font = "10px sans-serif";
+	})
+	.lift()
+	.seq(Arrow.on('canvas', 'mousedown'));
+
+	const moveOrFireGun = Arrow.on('canvas', 'keydown').seq((e => {
+		if(e.keyCode == 37) { // left key
+			gun.speed.x -= 4000 * timestep; 
+		}
+		else if(e.keyCode == 39) { // right key
+			gun.speed.x += 4000 * timestep; 
+		}
+		else if(e.keyCode == 38) { // up key -- fire gun
+			const speed = new Vec2(gun.speed.x, -1000);
+			balls.push(makeBall('b', gun.pos.x, canvas.height - 10, 4, speed, 'green'));
+		}
+	}).lift());
+
+	const arrow = newGame.seq(
+			randomDelay(3000).seq(addBall).switchMap(
+			   Arrow.fanout([
+				checkEmitter.wait(delta/2).forever(),
+				reqAFrame.seq(update).seq(render).forever(),
+				moveOrFireGun.wait(delta*2).forever(),
+			   ])
+		        )
+		        .until(cleanup.wait(delta*10).whileTrue().noemit())
+		      )
+		      .forever();
+
+	 const gun = makeBall('gun', canvas.width/2, canvas.height, 15, new Vec2(0, 0), 'black'); 
+
+         arrow.run();
+        </script>
+    </body>
+</html>
+

@@ -1,0 +1,110 @@
+<html>
+  <head>
+    <script src="jquery.js"></script>
+    <script src="../dist/arrowjs.js"></script>
+    <script src="util.js"></script>
+    <script src="jquery.ba-throttle-debounce.js"></script>
+  </head>
+  <body>
+	  <button value=2 id='b2'>b2</button>
+	  <button value=3 id='b3'>b3</button>
+	  <input id='b1'></input>
+	  <div id='input'></div> 
+	  <div id='output'></div>
+  <script>
+// _setTypecheck(false)
+	  
+ 
+	const setText = elemName => {
+		const elem = document.getElementById(elemName)
+		return (text => {
+			/* @arrow :: Number + String ~> Number + String */
+			elem.textContent += '\n'+text;
+			return text;
+		}).lift();
+	};
+
+	const getValue = (e => {
+		/* @arrow :: Event ~> String */
+		return e.srcElement.value; 
+	}).lift();
+
+	const keystroke = Arrow.on('#b1', 'input');
+
+	const result = getValue 
+	.seq(setText('input'))
+	.seq(randomDelay(5000))
+	.seq(setText('output')) 
+
+	/*
+	Arrow.fix(alpha =>
+	  keystroke 
+	  .seq(
+		Arrow.delay(1000) 
+		.seq(result)
+		.noemit()
+		.seq(alpha)
+		.any(alpha)
+	  )
+	)
+	.run();
+	*/
+
+	// StreamArrow.fromEvent('#b1', 'input').switch( debounce(1000).seq(result) ).run();
+
+	StreamArrow.fromEvent('#b1', 'input')
+	.take(5)
+	.map(getValue)
+	.switchMap( StreamArrow.interval(1000).take(5) )
+	.filter((x => {
+		/* @arrow :: ['a] ~> Bool */
+		return x.length < 3;
+	}).lift())
+	.takeUntil(Arrow.on('#b2', 'click'))
+	.map(setText('input'))
+	.seq(Arrow.log()).run();
+
+	// StreamArrow.fromEvent('#b1', 'input').take(2).map(result).seq(Arrow.log()).run();
+	  
+	/*******************************************************************/
+
+	const result2 = (e => {
+		/* @arrow :: (String, String) ~> String */
+		return e[0] + ', ' + e[1];
+	})
+	.lift()
+	.seq(setText('input'))
+
+	/*
+	const b2 = Arrow.on('#b2', 'click').seq(getValue);
+	const b3 = Arrow.on('#b3', 'click').seq(getValue);
+
+	('_').lift().fanout(('_').lift()).seq(b2.combine(b3, result2)).run();
+	*/
+
+	StreamArrow.fromEvent('#b2', 'click')
+	.map(getValue)
+	.snapshot(
+		StreamArrow.fromEvent('#b3', 'click')
+		.map(getValue)
+	)
+	.map(result2)
+	.run();
+  
+	/*******************************************************************/
+	
+	// StreamArrow.of(1,2,3).scan(((c,x)=>c-x).lift(), (10).lift()).map(setText('input')).seq(Arrow.log()).run();
+
+	StreamArrow.of(1,2,3,4,5).concat(StreamArrow.of(6,7,8,9,10)).buffer(10).map(randomDelay(1000).seq(setText('input'))).seq(Arrow.log()).run();
+	
+	// StreamArrow.fromInputArray().map(setText('input')).seq(Arrow.log()).run([[1,2,3,4]]);
+
+	const emptyArray = (_ => {
+		/* @arrow :: _ ~> ['a] */
+		return [];
+	}).lift();
+	// StreamArrow.forEach([[1,2],[10,20],[100,200]], randomDelay(2000)).reduce(((c,x)=>c.concat(x)).lift()).map(Arrow.log()).seq(Arrow.log()).run();
+  </script>
+  </body>
+</html>
+

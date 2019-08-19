@@ -1,0 +1,16 @@
+{
+  "name": "arrowjs-frp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "build": "rollup -c rollup.config.browser.js && concat -o dist/arrowjs.js dist/arrowjs.js dist/load.js"
+  },
+  "devDependencies": {
+    "concat": "^1.0.3",
+    "rollup": "^1.19.4"
+  }
+}
